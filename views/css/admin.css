@@ -1,0 +1,36 @@
+/* Filecheck PrestaShop Admin Styles */
+
+#filecheck_product_data {
+    padding: 20px;
+    background: #fff;
+    margin-bottom: 20px;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+#filecheck-test-connection {
+    margin-top: 5px;
+}
+
+#filecheck-connection-result {
+    font-size: 13px;
+    padding: 2px 10px;
+    border-radius: 3px;
+}
+
+/* Badge outcome styles */
+#filecheck-job-panel ul {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 0 0;
+}
+
+#filecheck-job-panel li {
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px dotted #ccc;
+}
+
+#filecheck-job-panel li:last-child {
+    border-bottom: none;
+}
