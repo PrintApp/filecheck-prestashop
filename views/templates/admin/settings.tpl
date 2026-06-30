@@ -89,7 +89,7 @@
                                 {foreach from=$workflows item=workflow}
                                     {if isset($workflow.id) && isset($workflow.title)}
                                         <option value="{$workflow.id|escape:'html':'UTF-8'}" {if $FILECHECK_DEFAULT_WORKFLOW_ID == $workflow.id}selected="selected"{/if}>
-                                            {$workflow.title|escape:'html':'UTF-8'} ({$workflow.id|escape:'html':'UTF-8'})
+                                            {$workflow.title|escape:'html':'UTF-8'}
                                         </option>
                                     {/if}
                                 {/foreach}

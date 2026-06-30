@@ -35,7 +35,7 @@
                         {foreach from=$fc_workflows item=workflow}
                             {if isset($workflow.id) && isset($workflow.title)}
                                 <option value="{$workflow.id|escape:'html':'UTF-8'}" {if $fc_prod_workflow_id == $workflow.id}selected="selected"{/if}>
-                                    {$workflow.title|escape:'html':'UTF-8'} ({$workflow.id|escape:'html':'UTF-8'})
+                                    {$workflow.title|escape:'html':'UTF-8'}
                                 </option>
                             {/if}
                         {/foreach}
