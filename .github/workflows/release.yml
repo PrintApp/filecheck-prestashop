@@ -1,0 +1,54 @@
+name: Generate PrestaShop Module Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create PrestaShop Package
+        run: |
+          # Define the module technical name
+          MODULE_NAME="filecheck"
+          
+          # Create a clean packaging directory
+          mkdir -p dist/${MODULE_NAME}
+          
+          # Copy all relevant module files/directories
+          # We omit git/github/workflow directories, and files not needed in production
+          cp -r classes/ dist/${MODULE_NAME}/
+          cp -r controllers/ dist/${MODULE_NAME}/
+          cp -r views/ dist/${MODULE_NAME}/
+          cp filecheck.php dist/${MODULE_NAME}/
+          cp README.md dist/${MODULE_NAME}/
+          
+          # Copy optional assets if they exist
+          [ -f logo.png ] && cp logo.png dist/${MODULE_NAME}/
+          [ -f icon.png ] && cp icon.png dist/${MODULE_NAME}/
+          
+          # Move to the dist directory and compress the folder
+          cd dist
+          zip -r ../${MODULE_NAME}.zip ${MODULE_NAME}
+          cd ..
+          
+          # Output verification
+          echo "Package created successfully: ${MODULE_NAME}.zip"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes \
+            filecheck.zip
