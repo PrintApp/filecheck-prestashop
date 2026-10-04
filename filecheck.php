@@ -553,7 +553,14 @@ class Filecheck extends Module
                     continue;
                 }
 
-                $filename = $run['source']['name'] ?? '';
+                // The signed URL of the file to fulfil (the corrected file,
+                // else the upload). Missing while the run is still processing.
+                $download_url = $run['downloadUrl'] ?? '';
+                if (empty($download_url)) {
+                    continue;
+                }
+
+                $filename = $run['name'] ?? '';
                 if (empty($filename)) {
                     $ext = '.pdf';
                     if (isset($run['acceptKey']) && $run['acceptKey'] === 'raster') {
@@ -573,22 +580,22 @@ class Filecheck extends Module
                     @file_put_contents($secure_dir . '/index.php', "<?php // Silence\n");
                 }
 
-                $local_filename = time() . '_' . $filename;
+                // Run id keeps two same-named files in one order apart.
+                $local_filename = time() . '_' . $run_id . '_' . $filename;
                 $local_filepath = $secure_dir . '/' . $local_filename;
 
-                $api_url = FilecheckAPIClient::instance()->getApiUrl();
-                $download_url = $api_url . '/jobs/' . urlencode($job_id) . '/runs/' . urlencode($run_id) . '/output';
-
-                // Stream secure download
+                // Stream secure download. No Authorization header: the URL is
+                // presigned, and storage rejects a request that carries both.
                 $ch = curl_init();
                 curl_setopt($ch, CURLOPT_URL, $download_url);
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
                 curl_setopt($ch, CURLOPT_TIMEOUT, 300);
-                curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                    'Authorization: Bearer ' . $secret_key
-                ]);
 
                 $fp = fopen($local_filepath, 'w+');
+                if (!$fp) {
+                    curl_close($ch);
+                    continue;
+                }
                 curl_setopt($ch, CURLOPT_FILE, $fp);
                 curl_exec($ch);
 
