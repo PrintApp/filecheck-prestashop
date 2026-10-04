@@ -41,7 +41,7 @@ class Filecheck extends Module
     {
         $this->name = 'filecheck';
         $this->tab = 'adverts_market_places';
-        $this->version = '1.0.0';
+        $this->version = '1.0.1';
         $this->author = 'Filecheck';
         $this->need_instance = 0;
         $this->bootstrap = true;
