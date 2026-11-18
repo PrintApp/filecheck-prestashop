@@ -32,9 +32,19 @@ jobs:
           cp filecheck.php dist/${MODULE_NAME}/
           cp README.md dist/${MODULE_NAME}/
           
+          # Module email templates (mails/<lang>/) and upgrade scripts
+          # (upgrade/upgrade-<version>.php, run on existing installs)
+          [ -d mails ] && cp -r mails/ dist/${MODULE_NAME}/
+          [ -d upgrade ] && cp -r upgrade/ dist/${MODULE_NAME}/
+
           # Copy optional assets if they exist
           [ -f logo.png ] && cp logo.png dist/${MODULE_NAME}/
           [ -f icon.png ] && cp icon.png dist/${MODULE_NAME}/
+
+          # Fail the build if a folder the module needs was left out
+          for d in classes controllers views; do [ -d dist/${MODULE_NAME}/$d ] || { echo "missing $d"; exit 1; }; done
+          if [ -d mails ]; then [ -d dist/${MODULE_NAME}/mails ] || { echo "missing mails"; exit 1; }; fi
+          if [ -d upgrade ]; then [ -d dist/${MODULE_NAME}/upgrade ] || { echo "missing upgrade"; exit 1; }; fi
           
           # Move to the dist directory and compress the folder
           cd dist
