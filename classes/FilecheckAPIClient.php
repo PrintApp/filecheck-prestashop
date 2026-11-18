@@ -180,6 +180,20 @@ class FilecheckAPIClient
         return is_array($body) ? $body : [];
     }
 
+    /**
+     * Signed link to the order on the Filecheck upload page (artwork after
+     * checkout), as { url, orderName, status, items }; null when no line of
+     * the order waits for artwork.
+     */
+    public function getUploadLink($order_id, $secret_key = '')
+    {
+        $response = $this->request($this->api_url . '/orders/' . rawurlencode((string) $order_id) . '/upload-link', 'GET', null, $secret_key);
+        if (!is_array($response) || (int) $response['code'] !== 200 || !is_array($response['body']) || empty($response['body']['url'])) {
+            return null;
+        }
+        return $response['body'];
+    }
+
     public function syncOrder($order_id, $payload, $secret_key = '')
     {
         if (empty($secret_key)) {

@@ -98,6 +98,28 @@
                         <p class="help-block">{l s='Default workflow. Can be overridden per product.' d='Modules.Filecheck.Admin'}</p>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="control-label col-lg-3" for="filecheck_artwork_timing">
+                        {l s='When to Collect Artwork' d='Modules.Filecheck.Admin'}
+                    </label>
+                    <div class="col-lg-9">
+                        <select name="FILECHECK_ARTWORK_TIMING" id="filecheck_artwork_timing" style="width: 100%; max-width: 450px; height: 35px;">
+                            <option value="checkout" {if $FILECHECK_ARTWORK_TIMING == 'checkout'}selected="selected"{/if}>{l s='At checkout (before add to cart)' d='Modules.Filecheck.Admin'}</option>
+                            <option value="either" {if $FILECHECK_ARTWORK_TIMING == 'either'}selected="selected"{/if}>{l s='Optional, or after checkout' d='Modules.Filecheck.Admin'}</option>
+                            <option value="after_order" {if $FILECHECK_ARTWORK_TIMING == 'after_order'}selected="selected"{/if}>{l s='After checkout only' d='Modules.Filecheck.Admin'}</option>
+                        </select>
+                        <p class="help-block">{l s='Default for all products. Customers who pay without uploading get a link to your Filecheck upload page. Can be overridden per product.' d='Modules.Filecheck.Admin'}</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label col-lg-3" for="filecheck_upload_email">
+                        {l s='Upload Link Email' d='Modules.Filecheck.Admin'}
+                    </label>
+                    <div class="col-lg-9">
+                        <label><input type="checkbox" name="FILECHECK_UPLOAD_EMAIL" id="filecheck_upload_email" value="1" {if $FILECHECK_UPLOAD_EMAIL}checked="checked"{/if}> {l s='Email customers an "Upload your artwork" link when an order still needs artwork' d='Modules.Filecheck.Admin'}</label>
+                        <p class="help-block">{l s='Sent through your store mailer (template: modules/filecheck/mails/<lang>/filecheck_upload). The link also shows on the order confirmation and order detail pages, and you can add {filecheck_upload_link} to any order email template.' d='Modules.Filecheck.Admin'}</p>
+                    </div>
+                </div>
             </div>
         </div>
 

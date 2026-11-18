@@ -1,0 +1,10 @@
+Hi {firstname} {lastname},
+
+Thanks for your order {order_name}. We need your artwork for some items on this order before we can print them.
+
+Upload your files any time at:
+{filecheck_upload_link}
+
+We will check them before we print.
+
+{shop_name}

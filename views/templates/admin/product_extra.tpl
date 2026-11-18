@@ -80,6 +80,18 @@
                     {l s='Choose how the Filecheck element is displayed on the product page.' d='Modules.Filecheck.Admin'}
                 </p>
             </div>
+            <div class="form-group">
+                <label for="filecheck_artwork_timing">{l s='When to Collect Artwork' d='Modules.Filecheck.Admin'}</label>
+                <select name="filecheck_artwork_timing" id="filecheck_artwork_timing" class="form-control" style="max-width: 400px; height: 35px;">
+                    <option value="" {if $fc_prod_timing == ''}selected="selected"{/if}>{l s='Use Global Default' d='Modules.Filecheck.Admin'}</option>
+                    <option value="checkout" {if $fc_prod_timing == 'checkout'}selected="selected"{/if}>{l s='At checkout (before add to cart)' d='Modules.Filecheck.Admin'}</option>
+                    <option value="either" {if $fc_prod_timing == 'either'}selected="selected"{/if}>{l s='Optional, or after checkout' d='Modules.Filecheck.Admin'}</option>
+                    <option value="after_order" {if $fc_prod_timing == 'after_order'}selected="selected"{/if}>{l s='After checkout only' d='Modules.Filecheck.Admin'}</option>
+                </select>
+                <p class="help-block" style="color: #666; font-size: 11px; margin-top: 3px;">
+                    {l s='After checkout: customers upload after paying, from a link in their order email.' d='Modules.Filecheck.Admin'}
+                </p>
+            </div>
         </div>
     </div>
 </div>

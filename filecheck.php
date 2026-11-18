@@ -41,7 +41,7 @@ class Filecheck extends Module
     {
         $this->name = 'filecheck';
         $this->tab = 'adverts_market_places';
-        $this->version = '1.0.1';
+        $this->version = '1.1.0';
         $this->author = 'Filecheck';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -90,7 +90,20 @@ class Filecheck extends Module
             && $this->registerHook('displayAdminOrder')
             && $this->registerHook('displayAdminProductsExtra')
             && $this->registerHook('actionProductUpdate')
-            && $this->registerHook('actionAdminControllerSetMedia');
+            && $this->registerHook('actionAdminControllerSetMedia')
+            && $this->registerUploadLinkHooks();
+    }
+
+    /**
+     * Artwork after checkout: the upload link on the order confirmation page,
+     * the order detail page, and as {filecheck_upload_link} in store emails.
+     * Also registered by upgrade/upgrade-1.1.0.php on existing installs.
+     */
+    public function registerUploadLinkHooks()
+    {
+        return $this->registerHook('displayOrderConfirmation')
+            && $this->registerHook('displayOrderDetail')
+            && $this->registerHook('actionEmailSendBefore');
     }
 
     protected function createTables()
@@ -169,6 +182,9 @@ class Filecheck extends Module
             Configuration::updateValue('FILECHECK_AGENT_ID', $agent);
             Configuration::updateValue('FILECHECK_API_URL', $url);
             Configuration::updateValue('FILECHECK_DEFAULT_WORKFLOW_ID', $workflow);
+            $timing = Tools::getValue('FILECHECK_ARTWORK_TIMING');
+            Configuration::updateValue('FILECHECK_ARTWORK_TIMING', in_array($timing, FilecheckProduct::TIMINGS, true) ? $timing : 'checkout');
+            Configuration::updateValue('FILECHECK_UPLOAD_EMAIL', Tools::getValue('FILECHECK_UPLOAD_EMAIL') ? 1 : 0);
 
             $output .= $this->displayConfirmation($this->l('Settings updated successfully.'));
         }
@@ -180,6 +196,8 @@ class Filecheck extends Module
             'FILECHECK_AGENT_ID' => Configuration::get('FILECHECK_AGENT_ID'),
             'FILECHECK_API_URL' => Configuration::get('FILECHECK_API_URL', 'https://api.filecheck.io'),
             'FILECHECK_DEFAULT_WORKFLOW_ID' => Configuration::get('FILECHECK_DEFAULT_WORKFLOW_ID'),
+            'FILECHECK_ARTWORK_TIMING' => Configuration::get('FILECHECK_ARTWORK_TIMING') ?: 'checkout',
+            'FILECHECK_UPLOAD_EMAIL' => (int) Configuration::get('FILECHECK_UPLOAD_EMAIL', null, null, null, 1),
             'workflows' => FilecheckAPIClient::instance()->getWorkflows(),
             'ajax_test_url' => $this->context->link->getAdminLink('AdminModules', true, [], [
                 'configure' => $this->name,
@@ -299,6 +317,7 @@ class Filecheck extends Module
                 'agent_id' => $agent_id,
                 'workflow_id' => $workflow_id,
                 'connector_id' => $connector_id,
+                'artwork_timing' => FilecheckProduct::artworkTiming($id_product),
                 'id_product' => $id_product,
                 'ajax_url' => $ajax_endpoint,
             ]
@@ -393,8 +412,10 @@ class Filecheck extends Module
         // Move jobs from id_cart to id_order
         FilecheckJob::associateJobsWithOrder($cart->id, $order->id);
 
-        // Sync order details to Filecheck API
-        $this->syncOrderToFilecheck($order);
+        // Sync order details to Filecheck API. The order's own state is not set
+        // yet at this hook, so pass the status the order is being created with.
+        $id_state = isset($params['orderStatus']) && Validate::isLoadedObject($params['orderStatus']) ? (int) $params['orderStatus']->id : 0;
+        $this->syncOrderToFilecheck($order, null, $id_state);
     }
 
     /**
@@ -414,7 +435,7 @@ class Filecheck extends Module
         $state = $new_status->name[$this->context->language->id] ?? 'Unknown';
 
         // Re-sync status to Filecheck
-        $this->syncOrderToFilecheck($order, $state);
+        $this->syncOrderToFilecheck($order, $state, (int) $new_status->id);
 
         // Standard Paid / Processing / Completed triggers file downloads
         // In PrestaShop, we can inspect if the order state is marked as paid or paid status
@@ -428,20 +449,32 @@ class Filecheck extends Module
         }
     }
 
-    public function syncOrderToFilecheck($order, $custom_status = null)
+    /**
+     * Order statuses at which lines bought without artwork are NOT collected:
+     * a failed payment, a cancelled or a refunded order never gets an upload page.
+     */
+    protected function collectsArtworkLater($id_state)
+    {
+        $closed = array_map('intval', [
+            Configuration::get('PS_OS_ERROR'),
+            Configuration::get('PS_OS_CANCELED'),
+            Configuration::get('PS_OS_REFUND'),
+        ]);
+        return !in_array((int) $id_state, $closed, true);
+    }
+
+    public function syncOrderToFilecheck($order, $custom_status = null, $id_state = 0)
     {
         $secret_key = Configuration::get('FILECHECK_SECRET_KEY');
         if (empty($secret_key)) {
             return;
         }
 
-        $jobs = FilecheckJob::getJobsForOrder($order->id);
-        if (empty($jobs)) {
-            return; // No filecheck uploads associated
-        }
-
+        $jobs = FilecheckJob::getJobsForOrder($order->id) ?: [];
         $products = $order->getProducts();
         $line_items = [];
+        $awaiting = false;
+        $collect_later = $this->collectsArtworkLater($id_state ?: (int) $order->current_state);
 
         foreach ($products as $p) {
             $matching_job = null;
@@ -453,23 +486,35 @@ class Filecheck extends Module
                 }
             }
 
+            // Artwork after checkout: a line bought without a file, on a product
+            // that collects artwork after the order, goes to Filecheck too.
+            $await_workflow = '';
             if (!$matching_job) {
-                continue;
+                $await_workflow = $collect_later ? FilecheckProduct::workflowId((int) $p['product_id']) : '';
+                if (!$await_workflow || FilecheckProduct::artworkTiming((int) $p['product_id']) === 'checkout') {
+                    continue;
+                }
+                $awaiting = true;
             }
 
-            $line_items[] = [
+            $line = [
                 'itemId' => (string) $p['id_order_detail'],
                 'productId' => (string) $p['product_id'],
                 'name' => $p['product_name'],
                 'quantity' => (int) $p['product_quantity'],
                 'sku' => $p['product_reference'],
                 'total' => (float) $p['total_price_tax_incl'],
-                'jobId' => $matching_job,
+                'jobId' => $matching_job ?: null,
             ];
+            if ($await_workflow) {
+                $line['awaitArtwork'] = true;
+                $line['workflowId'] = $await_workflow;
+            }
+            $line_items[] = $line;
         }
 
         if (empty($line_items)) {
-            return; // No items with active jobs
+            return; // Nothing on this order for Filecheck
         }
 
         $id_lang = $this->context->language ? (int)$this->context->language->id : (int)Configuration::get('PS_LANG_DEFAULT');
@@ -482,6 +527,8 @@ class Filecheck extends Module
 
         $payload = [
             'orderId' => (string)$order->id,
+            // What the customer sees and types on the upload page.
+            'orderName' => (string)$order->reference,
             'status' => $custom_status ?? $status_name,
             'currency' => $currency->iso_code,
             'total' => (float)$order->total_paid_tax_incl,
@@ -507,8 +554,129 @@ class Filecheck extends Module
             ];
         }
 
-        FilecheckAPIClient::instance()->syncOrder($order->id, $payload, $secret_key);
-        FilecheckJob::markSynced($order->id);
+        $synced = FilecheckAPIClient::instance()->syncOrder($order->id, $payload, $secret_key);
+        if (!empty($jobs)) {
+            FilecheckJob::markSynced($order->id);
+        }
+
+        // First sync of an order still waiting for artwork: send the customer
+        // the upload link through the store's own mailer, once.
+        if ($synced === true && $awaiting && $custom_status === null) {
+            $this->sendUploadLinkEmail($order);
+        }
+    }
+
+    // -------------------------------------------------------------
+    // ARTWORK AFTER CHECKOUT: upload link
+    // -------------------------------------------------------------
+
+    protected static $uploadLinks = [];
+
+    /** Does this order have a line that collects artwork after the order? (no API call) */
+    protected function orderMayAwaitArtwork($order)
+    {
+        foreach ($order->getProducts() as $p) {
+            $id = (int) $p['product_id'];
+            if (FilecheckProduct::workflowId($id) && FilecheckProduct::artworkTiming($id) !== 'checkout') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** { url, status, ... } from Filecheck for an order still waiting for artwork, else null. */
+    public function getUploadLink($order)
+    {
+        if (!Validate::isLoadedObject($order) || !$this->orderMayAwaitArtwork($order)) {
+            return null;
+        }
+        $id = (int) $order->id;
+        if (!array_key_exists($id, self::$uploadLinks)) {
+            $link = FilecheckAPIClient::instance()->getUploadLink($id);
+            self::$uploadLinks[$id] = ($link && ($link['status'] ?? '') !== 'complete') ? $link : null;
+        }
+        return self::$uploadLinks[$id];
+    }
+
+    protected function sendUploadLinkEmail($order)
+    {
+        if (!Configuration::get('FILECHECK_UPLOAD_EMAIL', null, null, null, 1)) {
+            return;
+        }
+        $link = $this->getUploadLink($order);
+        $customer = new Customer((int) $order->id_customer);
+        if (!$link || !Validate::isEmail($customer->email)) {
+            return;
+        }
+        // The template ships in English only: a language without one would make
+        // Mail::Send refuse to send, so fall back to English (else the shop default).
+        $id_lang = (int) $order->id_lang;
+        $dir = _PS_MODULE_DIR_ . $this->name . '/mails/';
+        if (!is_file($dir . Language::getIsoById($id_lang) . '/filecheck_upload.html')) {
+            $id_lang = (int) Language::getIdByIso('en') ?: (int) Configuration::get('PS_LANG_DEFAULT');
+        }
+        Mail::Send(
+            $id_lang,
+            'filecheck_upload',
+            $this->trans('Upload your artwork for order %s', [$order->reference], 'Modules.Filecheck.Shop'),
+            [
+                '{firstname}' => $customer->firstname,
+                '{lastname}' => $customer->lastname,
+                '{order_name}' => $order->reference,
+                '{filecheck_upload_link}' => $link['url'],
+            ],
+            $customer->email,
+            trim($customer->firstname . ' ' . $customer->lastname),
+            null,
+            null,
+            null,
+            null,
+            _PS_MODULE_DIR_ . $this->name . '/mails/',
+            false,
+            (int) $order->id_shop
+        );
+    }
+
+    protected function renderUploadLink($order)
+    {
+        $link = $this->getUploadLink($order);
+        if (!$link) {
+            return '';
+        }
+        $this->context->smarty->assign(['fc_upload_url' => $link['url']]);
+        return $this->display(__FILE__, 'views/templates/hook/upload_link.tpl');
+    }
+
+    public function hookDisplayOrderConfirmation($params)
+    {
+        return $this->renderUploadLink($params['order'] ?? null);
+    }
+
+    public function hookDisplayOrderDetail($params)
+    {
+        return $this->renderUploadLink($params['order'] ?? null);
+    }
+
+    /**
+     * Lets a merchant put {filecheck_upload_link} in any store email template
+     * that carries an order (order_conf, payment, ...). Empty when the order
+     * waits for no artwork.
+     */
+    public function hookActionEmailSendBefore($params)
+    {
+        $vars = &$params['templateVars'];
+        if (!is_array($vars) || isset($vars['{filecheck_upload_link}'])) {
+            return;
+        }
+        $vars['{filecheck_upload_link}'] = '';
+        $id_order = isset($vars['{id_order}']) ? (int) $vars['{id_order}'] : 0;
+        if (!$id_order) {
+            return;
+        }
+        $link = $this->getUploadLink(new Order($id_order));
+        if ($link) {
+            $vars['{filecheck_upload_link}'] = $link['url'];
+        }
     }
 
     public function processOrderFiles($order)
@@ -671,6 +839,7 @@ class Filecheck extends Module
             'fc_prod_workflow_id' => $prod_config['workflow_id'] ?: 'none',
             'fc_prod_connector_id' => $prod_config['connector_id'] ?: '',
             'fc_prod_presentation' => $prod_config['presentation'] ?: '',
+            'fc_prod_timing' => FilecheckProduct::getTiming($id_product),
             'fc_workflows' => $workflows,
             'fc_connectors' => $connectors,
         ]);
@@ -691,6 +860,7 @@ class Filecheck extends Module
             $presentation = Tools::getValue('filecheck_presentation');
 
             FilecheckProduct::saveForProduct($id_product, $workflow_id, $connector_id, $presentation);
+            FilecheckProduct::saveTiming($id_product, Tools::getValue('filecheck_artwork_timing'));
         }
     }
 

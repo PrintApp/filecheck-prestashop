@@ -24,6 +24,58 @@ if (!defined('_PS_VERSION_')) {
 
 class FilecheckProduct
 {
+    /** Artwork after checkout: when a product collects its artwork. */
+    const TIMINGS = ['checkout', 'either', 'after_order'];
+
+    /**
+     * Per-product timings, kept as one JSON map in Configuration so existing
+     * installs need no table change. Missing = the global default.
+     */
+    protected static function timings()
+    {
+        $map = json_decode((string) Configuration::get('FILECHECK_PRODUCT_TIMINGS'), true);
+        return is_array($map) ? $map : [];
+    }
+
+    public static function getTiming($id_product)
+    {
+        $map = self::timings();
+        $timing = $map[(string) (int) $id_product] ?? '';
+        return in_array($timing, self::TIMINGS, true) ? $timing : '';
+    }
+
+    public static function saveTiming($id_product, $timing)
+    {
+        $map = self::timings();
+        $key = (string) (int) $id_product;
+        if (in_array($timing, self::TIMINGS, true)) {
+            $map[$key] = $timing;
+        } else {
+            unset($map[$key]);
+        }
+        return Configuration::updateValue('FILECHECK_PRODUCT_TIMINGS', json_encode($map));
+    }
+
+    /** Resolved timing: the product's, then the global default, then 'checkout'. */
+    public static function artworkTiming($id_product)
+    {
+        $timing = self::getTiming($id_product) ?: Configuration::get('FILECHECK_ARTWORK_TIMING');
+        return in_array($timing, self::TIMINGS, true) ? $timing : 'checkout';
+    }
+
+    /** The product's workflow id with "global" resolved; '' when Filecheck is off for it. */
+    public static function workflowId($id_product)
+    {
+        $workflow_id = self::getForProduct($id_product)['workflow_id'];
+        if ($workflow_id === 'none') {
+            return '';
+        }
+        if (empty($workflow_id) || $workflow_id === 'global') {
+            $workflow_id = Configuration::get('FILECHECK_DEFAULT_WORKFLOW_ID');
+        }
+        return $workflow_id ?: '';
+    }
+
     /**
      * Get Filecheck configuration for a specific product.
      * Returns an array with workflow_id, connector_id and presentation settings.
